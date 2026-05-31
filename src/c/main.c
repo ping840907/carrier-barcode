@@ -261,18 +261,10 @@ static void rebuild_barcode(void) {
  * 自動依畫面邊界延展：
  *   - s_rotation == 0（正面）：模組沿「寬度」排列、長條沿「高度」延展。
  *   - s_rotation == 1（順時鐘 90 度）：模組沿「高度」排列、長條沿「寬度」延展。
- *
- * 模組寬度採「智慧填滿」：
- *   - 先用最大的「整數」模組寬度。若該寬度 >= 2px，各模組等寬（narrow:wide
- *     比例完全精確），白邊縮到最小且置中。
- *   - 若整數寬已是 1px（長條碼在寬螢幕上仍填不滿），則把剩餘像素以平均
- *     分散（Bresenham）方式分給部分模組，使其 +1px 補滿可用寬度。±1px 的
- *     抖動平均分布、平均比例仍 ~2:1，避免大片左右白邊（例如 emery 200px）。
- * 長條方向（厚度）一律填滿整個交叉邊。
+ * 兩者皆把模組鋪滿可用空間（保留少量 quiet zone），長條方向則填滿整個
+ * 交叉邊，因此換方向時會自動適應該方向的邊界長度。
  */
 static void draw_linear(GContext *ctx, GRect content) {
-  if (s_module_count <= 0) return;
-
   bool horiz = (s_rotation == 0);
 
   /* axis = 模組排列方向可用長度；cross = 長條延展方向可用長度 */
@@ -285,36 +277,23 @@ static void draw_linear(GContext *ctx, GRect content) {
   int draw_len = axis - 2 * quiet;
   if (draw_len < s_module_count) draw_len = axis;   /* 太擠就連 quiet zone 一起用 */
 
-  int unit = draw_len / s_module_count;             /* 最大整數模組寬 */
+  int unit = draw_len / s_module_count;             /* 每個模組的像素寬，吃滿邊界 */
   if (unit < 1) unit = 1;
 
-  /* unit >= 2：各模組等寬，比例精確；unit == 1：以剩餘像素平均加寬補滿 */
-  int total = (unit >= 2) ? unit * s_module_count : draw_len;
-  int extra = (unit >= 2) ? 0 : (draw_len - s_module_count);
-  if (extra < 0) extra = 0;
-
-  int off = (axis - total) / 2;                     /* 置中 */
+  int total = unit * s_module_count;
+  int off   = (axis - total) / 2;                   /* 置中 */
   if (off < 0) off = 0;
 
   int thick = cross - 2 * cmarg;                    /* 長條延展滿整個交叉邊 */
   if (thick < 1) thick = 1;
 
   graphics_context_set_fill_color(ctx, GColorBlack);
-  int acc = 0;
-  int pos = off;
   for (int i = 0; i < s_module_count; i++) {
-    int w = unit;
-    if (unit < 2) {                  /* 平均分散剩餘像素 */
-      w = 1;
-      acc += extra;
-      if (acc >= s_module_count) { w += 1; acc -= s_module_count; }
-    }
-    if (s_modules[i]) {
-      GRect r = horiz ? GRect(content.origin.x + pos,   content.origin.y + cmarg, w,     thick)
-                      : GRect(content.origin.x + cmarg, content.origin.y + pos,   thick, w);
-      graphics_fill_rect(ctx, r, 0, GCornerNone);
-    }
-    pos += w;
+    if (!s_modules[i]) continue;
+    int p = off + i * unit;
+    GRect r = horiz ? GRect(content.origin.x + p,     content.origin.y + cmarg, unit,  thick)
+                    : GRect(content.origin.x + cmarg, content.origin.y + p,     thick, unit);
+    graphics_fill_rect(ctx, r, 0, GCornerNone);
   }
 }
 
