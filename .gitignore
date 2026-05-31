@@ -1,0 +1,10 @@
+# Pebble build output
+build/
+*.pbw
+
+# Dependencies
+node_modules/
+
+# Editor / OS
+.DS_Store
+*.swp
