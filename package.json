@@ -29,7 +29,8 @@
     ],
     "messageKeys": [
       "BARCODE_DATA",
-      "BARCODE_FORMAT"
+      "BARCODE_FORMAT",
+      "BARCODE_TEXT_VISIBLE"
     ],
     "resources": {
       "media": []
