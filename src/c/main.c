@@ -329,6 +329,59 @@ static void draw_qr(GContext *ctx, GRect content) {
   }
 }
 
+/* 尚未設定條碼時的空狀態提示，整體垂直 + 水平置中，並以一個簡單的條碼
+ * 圖示點綴。手錶內建字型對中文支援有限，故提示文字使用英文。*/
+static void draw_empty_prompt(GContext *ctx, GRect b) {
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_context_set_text_color(ctx, GColorBlack);
+
+  GFont title_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  GFont body_font  = fonts_get_system_font(FONT_KEY_GOTHIC_18);
+
+  const char *title = "No Barcode";
+  const char *body  = "Set one in the\nPebble app settings";
+
+  /* 量測各區塊高度以便整體垂直置中 */
+  const int icon_h = 26;            /* 裝飾性條碼圖示高度 */
+  const int gap1   = 10;            /* 圖示與標題間距 */
+  const int gap2   = 6;             /* 標題與內文間距 */
+
+  GRect tbox = GRect(0, 0, b.size.w, 2000);
+  int title_h = graphics_text_layout_get_content_size(
+      title, title_font, tbox,
+      GTextOverflowModeWordWrap, GTextAlignmentCenter).h;
+  int body_h = graphics_text_layout_get_content_size(
+      body, body_font, tbox,
+      GTextOverflowModeWordWrap, GTextAlignmentCenter).h;
+
+  int block_h = icon_h + gap1 + title_h + gap2 + body_h;
+  int y = b.origin.y + (b.size.h - block_h) / 2;
+  if (y < b.origin.y) y = b.origin.y;
+
+  /* 裝飾性條碼圖示（一排寬窄不一的黑條），水平置中 */
+  const int8_t bars[] = {3, 1, 2, 1, 1, 3, 1, 2, 2, 1, 3, 1, 1, 2, 1, 3};
+  const int nbars = sizeof(bars) / sizeof(bars[0]);
+  const int gap = 2;
+  int icon_w = 0;
+  for (int i = 0; i < nbars; i++) icon_w += bars[i] + gap;
+  icon_w -= gap;
+  int ix = b.origin.x + (b.size.w - icon_w) / 2;
+  for (int i = 0; i < nbars; i++) {
+    graphics_fill_rect(ctx, GRect(ix, y, bars[i], icon_h), 0, GCornerNone);
+    ix += bars[i] + gap;
+  }
+  y += icon_h + gap1;
+
+  graphics_draw_text(ctx, title, title_font,
+      GRect(b.origin.x, y, b.size.w, title_h + 4),
+      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  y += title_h + gap2;
+
+  graphics_draw_text(ctx, body, body_font,
+      GRect(b.origin.x, y, b.size.w, body_h + 4),
+      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+}
+
 static void canvas_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
 
@@ -337,13 +390,7 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
 
   bool have = (s_format == FORMAT_QR) ? s_qr_ok : (s_module_count > 0);
   if (!have) {
-    /* 注意：手錶內建字型對中文支援有限，提示文字使用英文以確保可正常顯示 */
-    graphics_context_set_text_color(ctx, GColorBlack);
-    GRect tr = grect_inset(b, GEdgeInsets(10));
-    graphics_draw_text(ctx,
-        "No barcode set\n\nOpen the Pebble\nphone app settings\nto configure",
-        fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-        tr, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    draw_empty_prompt(ctx, b);
     return;
   }
 
