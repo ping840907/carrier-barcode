@@ -17,7 +17,7 @@ module.exports = [
     "defaultValue":
       "設定要顯示的一維條碼內容與編碼格式。" +
       "設定完成後條碼會儲存在手錶記憶體中，下次開啟 App 會直接顯示，無須重新設定。" +
-      "<br/><br/>顯示條碼時，按「上 / 下」鍵可將條碼旋轉 90°（共 4 個方向）。"
+      "<br/><br/>顯示條碼時，按「上 / 下」鍵可將條碼旋轉 90°（共 4 個方向），按「選擇 (SELECT)」鍵可切換是否顯示文字。"
   },
   {
     "type": "section",
@@ -47,6 +47,12 @@ module.exports = [
           { "label": "Code 128", "value": "1" },
           { "label": "QR Code", "value": "2" }
         ]
+      },
+      {
+        "type": "toggle",
+        "messageKey": "BARCODE_TEXT_VISIBLE",
+        "label": "顯示文字",
+        "defaultValue": true
       }
     ]
   },

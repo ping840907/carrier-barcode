@@ -22,9 +22,10 @@
 #define FORMAT_QR       2
 
 /* ---- persistent storage keys ---- */
-#define PERSIST_DATA      1
-#define PERSIST_FORMAT    2
-#define PERSIST_ROTATION  3
+#define PERSIST_DATA          1
+#define PERSIST_FORMAT        2
+#define PERSIST_ROTATION      3
+#define PERSIST_TEXT_VISIBLE  4
 
 /* ---- 參數 ---- */
 #define MAX_DATA_LEN    41     /* 含結尾 '\0'，可放 40 個字元 */
@@ -42,6 +43,7 @@ static Layer   *s_canvas_layer;
 static char     s_data[MAX_DATA_LEN] = "";
 static int      s_format   = FORMAT_CODE39;
 static int      s_rotation = 0;            /* 0,1,2,3 -> 0,90,180,270 度 */
+static bool     s_text_visible = true;     /* 是否顯示底部人眼可讀文字 */
 
 /* 一維條碼模組緩衝 */
 static uint8_t  s_modules[MAX_MODULES];    /* 每個元素為 1（黑條）或 0（白）*/
@@ -334,8 +336,9 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     return;
   }
 
-  GRect content = GRect(0, 0, b.size.w, b.size.h - TEXT_AREA_H);
-  GRect text_r  = GRect(2, b.size.h - TEXT_AREA_H, b.size.w - 4, TEXT_AREA_H);
+  /* 隱藏文字時，條碼可用滿整個畫面 */
+  int reserved = s_text_visible ? TEXT_AREA_H : 0;
+  GRect content = GRect(0, 0, b.size.w, b.size.h - reserved);
 
   if (s_format == FORMAT_QR) {
     draw_qr(ctx, content);
@@ -343,11 +346,14 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     draw_linear(ctx, content);
   }
 
-  /* 底部人眼可讀文字 */
-  graphics_context_set_text_color(ctx, GColorBlack);
-  graphics_draw_text(ctx, s_data,
-      fonts_get_system_font(FONT_KEY_GOTHIC_18),
-      text_r, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  /* 底部人眼可讀文字（可由設定或 SELECT 鍵開關）*/
+  if (s_text_visible) {
+    GRect text_r = GRect(2, b.size.h - TEXT_AREA_H, b.size.w - 4, TEXT_AREA_H);
+    graphics_context_set_text_color(ctx, GColorBlack);
+    graphics_draw_text(ctx, s_data,
+        fonts_get_system_font(FONT_KEY_GOTHIC_18),
+        text_r, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  }
 }
 
 /* ------------------------------------------------------------------------- *
@@ -359,6 +365,7 @@ static void load_state(void) {
   }
   s_format   = persist_exists(PERSIST_FORMAT)   ? persist_read_int(PERSIST_FORMAT)   : FORMAT_CODE39;
   s_rotation = persist_exists(PERSIST_ROTATION) ? persist_read_int(PERSIST_ROTATION) : 0;
+  s_text_visible = persist_exists(PERSIST_TEXT_VISIBLE) ? persist_read_bool(PERSIST_TEXT_VISIBLE) : true;
   if (s_format < FORMAT_CODE39 || s_format > FORMAT_QR) s_format = FORMAT_CODE39;
   if (s_rotation < 0 || s_rotation > 3) s_rotation = 0;
 }
@@ -367,6 +374,7 @@ static void save_state(void) {
   persist_write_string(PERSIST_DATA, s_data);
   persist_write_int(PERSIST_FORMAT, s_format);
   persist_write_int(PERSIST_ROTATION, s_rotation);
+  persist_write_bool(PERSIST_TEXT_VISIBLE, s_text_visible);
 }
 
 /* ------------------------------------------------------------------------- *
@@ -389,6 +397,14 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
                 : (int)t_fmt->value->int32;
     if (fmt < FORMAT_CODE39 || fmt > FORMAT_QR) fmt = FORMAT_CODE39;
     s_format = fmt;
+    changed = true;
+  }
+
+  Tuple *t_txt = dict_find(iter, MESSAGE_KEY_BARCODE_TEXT_VISIBLE);
+  if (t_txt) {
+    s_text_visible = (t_txt->type == TUPLE_CSTRING)
+                       ? (atoi(t_txt->value->cstring) != 0)
+                       : (t_txt->value->int32 != 0);
     changed = true;
   }
 
@@ -420,9 +436,17 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   rotate(-1);
 }
 
+/* SELECT：切換是否顯示底部人眼可讀文字 */
+static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
+  s_text_visible = !s_text_visible;
+  persist_write_bool(PERSIST_TEXT_VISIBLE, s_text_visible);
+  layer_mark_dirty(s_canvas_layer);
+}
+
 static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
+  window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
 }
 
 /* ------------------------------------------------------------------------- *
