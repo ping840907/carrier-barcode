@@ -2,7 +2,7 @@
 
 Pebble 條碼 App，支援一維與二維條碼。
 
-使用 [Clay](https://github.com/pebble/clay) 設定頁面設定要顯示的條碼。內建自行撰寫的一維編碼引擎，預設為 **Code 39 Std**，另支援 **Code 128**；二維條碼支援 **QR Code**。條碼設定完成後會儲存在手錶記憶體中常駐，無須反覆設定；顯示時可用按鍵旋轉方向。
+使用 [Clay](https://www.npmjs.com/package/@rebble/clay)（`@rebble/clay`）設定頁面設定要顯示的條碼。內建自行撰寫的一維編碼引擎，預設為 **Code 39 Std**，另支援 **Code 128**；二維條碼支援 **QR Code**。條碼設定完成後會儲存在手錶記憶體中常駐，無須反覆設定；顯示時可用按鍵旋轉方向。
 
 ## 功能
 
