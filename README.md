@@ -12,15 +12,15 @@ Pebble 條碼 App，支援一維與二維條碼。
   - **Code 39 Std**（預設，`src/c/main.c`）：標準 Code 39，支援 `0-9`、`A-Z`、空白與 `- . $ / + %`，自動加上 `*` start/stop 字元。
   - **Code 128**（`src/c/main.c`）：支援可見 ASCII（Code B）；偶數長度的純數字會自動使用較精簡的 Code C，並計算 mod-103 校驗碼。
   - **QR Code**（`src/c/qrcodegen.*`）：採用 Project Nayuki 公有領域 qrcodegen 函式庫，依內容自動選擇數字 / 英數 / byte 模式與最佳遮罩，含 Reed-Solomon 錯誤更正。
-- **記憶體常駐**：條碼內容、格式、旋轉方向皆存於 persistent storage，開啟 App 即直接顯示，無須重新設定。
-- **旋轉**：顯示條碼時按 **上 / 下** 鍵可將條碼旋轉 90°（共 4 個方向），一維與二維皆支援。
+- **自動延展**：條碼會自動依當前畫面邊界延展鋪滿可用空間；切換方向時也會自動適應該方向的邊界長度（不需手動調整）。
+- **記憶體常駐**：條碼內容、格式、方向皆存於 persistent storage，開啟 App 即直接顯示，無須重新設定。
+- **方向切換**：顯示條碼時按 **上 / 下** 鍵可在「正面」與「順時鐘 90°」之間切換，一維與二維皆支援。
 
 ## 操作
 
 | 按鍵 | 功能 |
 | ---- | ---- |
-| 上   | 逆向旋轉 90° |
-| 下   | 順向旋轉 90° |
+| 上 / 下 | 在正面與順時鐘 90° 之間切換方向 |
 | 選擇 (SELECT) | 切換是否顯示底部文字 |
 | 返回 | 離開 App |
 
@@ -37,7 +37,7 @@ pebble build
 pebble install --emulator basalt   # 或安裝到實機
 ```
 
-支援平台：aplite、basalt、chalk、diorite、emery。
+支援平台：aplite、basalt、chalk、diorite、emery、flint（Pebble 2 Duo）、gabbro（Pebble Round 2）。
 
 ## 專案結構
 

@@ -44,7 +44,7 @@ static Layer   *s_canvas_layer;
 
 static char     s_data[MAX_DATA_LEN] = "";
 static int      s_format   = FORMAT_CODE39;
-static int      s_rotation = 0;            /* 0,1,2,3 -> 0,90,180,270 度 */
+static int      s_rotation = 0;            /* 0 = 正面, 1 = 順時鐘 90 度 */
 static bool     s_text_visible = true;     /* 是否顯示底部人眼可讀文字 */
 
 /* 一維條碼模組緩衝 */
@@ -256,42 +256,52 @@ static void rebuild_barcode(void) {
  *  繪圖
  * ------------------------------------------------------------------------- */
 
-/* 繪製一維條碼（直條 / 旋轉）*/
+/* 繪製一維條碼。
+ *
+ * 自動依畫面邊界延展：
+ *   - s_rotation == 0（正面）：模組沿「寬度」排列、長條沿「高度」延展。
+ *   - s_rotation == 1（順時鐘 90 度）：模組沿「高度」排列、長條沿「寬度」延展。
+ * 兩者皆把模組鋪滿可用空間（保留少量 quiet zone），長條方向則填滿整個
+ * 交叉邊，因此換方向時會自動適應該方向的邊界長度。
+ */
 static void draw_linear(GContext *ctx, GRect content) {
-  bool horiz    = (s_rotation == 0 || s_rotation == 2);
-  bool reversed = (s_rotation == 2 || s_rotation == 3);
+  bool horiz = (s_rotation == 0);
 
+  /* axis = 模組排列方向可用長度；cross = 長條延展方向可用長度 */
   int axis  = horiz ? content.size.w : content.size.h;
   int cross = horiz ? content.size.h : content.size.w;
 
-  const int quiet = 6;
-  const int cmarg = 6;
+  const int quiet = 6;   /* 排列方向兩端留白（quiet zone）*/
+  const int cmarg = 6;   /* 延展方向兩側留白 */
 
   int draw_len = axis - 2 * quiet;
-  if (draw_len < s_module_count) draw_len = axis;
+  if (draw_len < s_module_count) draw_len = axis;   /* 太擠就連 quiet zone 一起用 */
 
-  int unit = draw_len / s_module_count;
+  int unit = draw_len / s_module_count;             /* 每個模組的像素寬，吃滿邊界 */
   if (unit < 1) unit = 1;
 
   int total = unit * s_module_count;
-  int off   = (axis - total) / 2;
+  int off   = (axis - total) / 2;                   /* 置中 */
   if (off < 0) off = 0;
 
-  int thick = cross - 2 * cmarg;
+  int thick = cross - 2 * cmarg;                    /* 長條延展滿整個交叉邊 */
   if (thick < 1) thick = 1;
 
   graphics_context_set_fill_color(ctx, GColorBlack);
   for (int i = 0; i < s_module_count; i++) {
     if (!s_modules[i]) continue;
-    int idx = reversed ? (s_module_count - 1 - i) : i;
-    int p = off + idx * unit;
-    GRect r = horiz ? GRect(content.origin.x + p, content.origin.y + cmarg, unit, thick)
-                    : GRect(content.origin.x + cmarg, content.origin.y + p, thick, unit);
+    int p = off + i * unit;
+    GRect r = horiz ? GRect(content.origin.x + p,     content.origin.y + cmarg, unit,  thick)
+                    : GRect(content.origin.x + cmarg, content.origin.y + p,     thick, unit);
     graphics_fill_rect(ctx, r, 0, GCornerNone);
   }
 }
 
-/* 繪製二維 QR（含旋轉與 quiet zone）*/
+/* 繪製二維 QR。
+ *
+ * 依可用空間（取寬高較小者）自動把每個模組放到最大整數像素，保留 quiet
+ * zone 並置中。s_rotation == 1 時整個矩陣順時鐘旋轉 90 度。
+ */
 static void draw_qr(GContext *ctx, GRect content) {
   int n = qrcodegen_getSize(s_qrcode);
   int avail = (content.size.w < content.size.h) ? content.size.w : content.size.h;
@@ -308,11 +318,10 @@ static void draw_qr(GContext *ctx, GRect content) {
     for (int mx = 0; mx < n; mx++) {
       if (!qrcodegen_getModule(s_qrcode, mx, my)) continue;
       int gx, gy;
-      switch (s_rotation) {
-        case 1:  gx = n - 1 - my; gy = mx;         break;
-        case 2:  gx = n - 1 - mx; gy = n - 1 - my; break;
-        case 3:  gx = my;         gy = n - 1 - mx; break;
-        default: gx = mx;         gy = my;         break;
+      if (s_rotation == 1) {       /* 順時鐘 90 度 */
+        gx = n - 1 - my; gy = mx;
+      } else {                     /* 正面 */
+        gx = mx;         gy = my;
       }
       GRect r = GRect(ox + gx * unit, oy + gy * unit, unit, unit);
       graphics_fill_rect(ctx, r, 0, GCornerNone);
@@ -369,7 +378,7 @@ static void load_state(void) {
   s_rotation = persist_exists(PERSIST_ROTATION) ? persist_read_int(PERSIST_ROTATION) : 0;
   s_text_visible = persist_exists(PERSIST_TEXT_VISIBLE) ? persist_read_bool(PERSIST_TEXT_VISIBLE) : true;
   if (s_format < FORMAT_CODE39 || s_format > FORMAT_QR) s_format = FORMAT_CODE39;
-  if (s_rotation < 0 || s_rotation > 3) s_rotation = 0;
+  if (s_rotation != 0 && s_rotation != 1) s_rotation = 0;
 }
 
 static void save_state(void) {
@@ -422,20 +431,20 @@ static void inbox_dropped(AppMessageResult reason, void *context) {
 }
 
 /* ------------------------------------------------------------------------- *
- *  按鍵：上 / 下 旋轉
+ *  按鍵：上 / 下 切換方向（正面 <-> 順時鐘 90 度）
  * ------------------------------------------------------------------------- */
-static void rotate(int delta) {
-  s_rotation = (s_rotation + delta + 4) % 4;
+static void toggle_rotation(void) {
+  s_rotation = s_rotation ? 0 : 1;
   persist_write_int(PERSIST_ROTATION, s_rotation);
   layer_mark_dirty(s_canvas_layer);
 }
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
-  rotate(+1);
+  toggle_rotation();
 }
 
 static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
-  rotate(-1);
+  toggle_rotation();
 }
 
 /* SELECT：切換是否顯示底部人眼可讀文字 */
