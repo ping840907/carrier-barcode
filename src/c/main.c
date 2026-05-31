@@ -1,4 +1,6 @@
 #include <pebble.h>
+#include <stdlib.h>   /* atoi */
+#include <string.h>   /* strncpy */
 #include "qrcodegen.h"
 
 /* ------------------------------------------------------------------------- *
