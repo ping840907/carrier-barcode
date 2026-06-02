@@ -44,8 +44,42 @@ pebble install --emulator basalt   # 或安裝到實機
 ```
 package.json        # 專案設定、messageKeys、Clay 相依
 src/c/main.c        # 手錶端 App 與一維編碼引擎、繪圖、旋轉、持久化
-src/c/qrcodegen.c   # QR Code 編碼引擎（Project Nayuki，公有領域）
+src/c/qrcodegen.c   # QR Code 編碼引擎（Project Nayuki，MIT License）
 src/c/qrcodegen.h
 src/pkjs/index.js   # PebbleKit JS 進入點，初始化 Clay
 src/pkjs/config.js  # Clay 設定頁面欄位定義
+```
+
+## 致謝 / Credits
+
+本專案的 **QR Code 編碼引擎**（`src/c/qrcodegen.c`、`src/c/qrcodegen.h`）改用自
+[Project Nayuki 的 QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library)
+（[GitHub: nayuki/QR-Code-generator](https://github.com/nayuki/QR-Code-generator)），以 **MIT License** 釋出。
+一維條碼引擎（Code 39 / Code 128）與其餘程式為本專案自行撰寫。
+
+設定頁面使用 [`@rebble/clay`](https://www.npmjs.com/package/@rebble/clay)（Rebble 社群維護）。
+
+### QR Code generator library — MIT License
+
+```
+QR Code generator library (C)
+
+Copyright (c) Project Nayuki. (MIT License)
+https://www.nayuki.io/page/qr-code-generator-library
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+- The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+- The Software is provided "as is", without warranty of any kind, express or
+  implied, including but not limited to the warranties of merchantability,
+  fitness for a particular purpose and noninfringement. In no event shall the
+  authors or copyright holders be liable for any claim, damages or other
+  liability, whether in an action of contract, tort or otherwise, arising from,
+  out of or in connection with the Software or the use or other dealings in the
+  Software.
 ```
