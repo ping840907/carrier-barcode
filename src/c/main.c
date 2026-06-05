@@ -44,8 +44,11 @@ static Layer   *s_canvas_layer;
 
 static char     s_data[MAX_DATA_LEN] = "";
 static int      s_format   = FORMAT_CODE39;
-static int      s_rotation = 0;            /* 0 = 正面, 1 = 順時鐘 90 度 */
+static int      s_rotation = 0;            /* 0 = 正面(直向), 1 = 順時鐘 90 度(橫向) */
 static bool     s_text_visible = true;     /* 是否顯示底部人眼可讀文字 */
+
+/* 畫面邊界（於 window_load 取得），供長度偵測器判斷條碼是否超界使用 */
+static GRect    s_screen_bounds;
 
 /* 一維條碼模組緩衝 */
 static uint8_t  s_modules[MAX_MODULES];    /* 每個元素為 1（黑條）或 0（白）*/
@@ -256,6 +259,8 @@ static void rebuild_barcode(void) {
  *  繪圖
  * ------------------------------------------------------------------------- */
 
+static int imin(int a, int b) { return a < b ? a : b; }
+
 /* 繪製一維條碼。
  *
  * 自動依畫面邊界延展：
@@ -264,8 +269,8 @@ static void rebuild_barcode(void) {
  * 兩者皆把模組鋪滿可用空間（保留少量 quiet zone），長條方向則填滿整個
  * 交叉邊，因此換方向時會自動適應該方向的邊界長度。
  */
-static void draw_linear(GContext *ctx, GRect content) {
-  bool horiz = (s_rotation == 0);
+static void draw_linear(GContext *ctx, GRect content, int rotation) {
+  bool horiz = (rotation == 0);
 
   /* axis = 模組排列方向可用長度；cross = 長條延展方向可用長度 */
   int axis  = horiz ? content.size.w : content.size.h;
@@ -382,6 +387,55 @@ static void draw_empty_prompt(GContext *ctx, GRect b) {
       GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 }
 
+/* 條碼長度超出畫面邊界、連全螢幕橫向都放不下時顯示的指示畫面，提醒使用者
+ * 縮短內容或改用其他編碼方式。整體垂直 + 水平置中。手錶內建字型對中文支援
+ * 有限，故提示文字使用英文。*/
+static void draw_overflow_prompt(GContext *ctx, GRect b) {
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_context_set_text_color(ctx, GColorBlack);
+
+  GFont title_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  GFont body_font  = fonts_get_system_font(FONT_KEY_GOTHIC_18);
+
+  const char *title = "Too Long";
+  const char *body  = "Barcode exceeds the\nscreen. Use shorter\ncontent or another\nbarcode format.";
+
+  GRect tbox = GRect(0, 0, b.size.w, 2000);
+  int title_h = graphics_text_layout_get_content_size(
+      title, title_font, tbox,
+      GTextOverflowModeWordWrap, GTextAlignmentCenter).h;
+  int body_h = graphics_text_layout_get_content_size(
+      body, body_font, tbox,
+      GTextOverflowModeWordWrap, GTextAlignmentCenter).h;
+
+  const int gap = 10;
+  int block_h = title_h + gap + body_h;
+  int y = b.origin.y + (b.size.h - block_h) / 2;
+  if (y < b.origin.y) y = b.origin.y;
+
+  graphics_draw_text(ctx, title, title_font,
+      GRect(b.origin.x, y, b.size.w, title_h + 4),
+      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  y += title_h + gap;
+
+  graphics_draw_text(ctx, body, body_font,
+      GRect(b.origin.x, y, b.size.w, body_h + 4),
+      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+}
+
+/* 一維條碼是否容得下直向顯示（模組沿畫面「寬度」排列）。直向放不下時，
+ * 偵測器會主動禁止直向、改用較長的橫向（模組沿「高度」排列）。*/
+static bool linear_fits_portrait(void) {
+  return s_module_count > 0 && s_module_count <= s_screen_bounds.size.w;
+}
+
+/* 依條碼長度與畫面邊界，逐步降級顯示方式：
+ *   1. 直向（正面）放得下          → 正常顯示，可自由切換方向
+ *   2. 直向放不下                  → 禁止直向，強制橫向
+ *   3. 橫向含文字仍放不下          → 隱藏底部文字爭取空間（全螢幕橫向）
+ *   4. 全螢幕橫向仍放不下          → 顯示指示畫面，請使用者換內容 / 換編碼
+ * QR 為正方形，方向不影響容量，故僅在「含文字 → 隱藏文字 → 仍放不下」之間降級。
+ */
 static void canvas_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
 
@@ -394,19 +448,54 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     return;
   }
 
+  int  W = b.size.w;
+  int  H = b.size.h;
+  bool show_text = s_text_visible;
+  int  rotation  = s_rotation;
+
+  if (s_format == FORMAT_QR) {
+    int n = qrcodegen_getSize(s_qrcode);
+    /* QR 為正方形，旋轉不改變容量；先試含文字，放不下再隱藏文字 */
+    int avail = imin(W, H - (show_text ? TEXT_AREA_H : 0));
+    if (n > avail && show_text) {            /* 隱藏文字爭取空間 */
+      show_text = false;
+      avail = imin(W, H);
+    }
+    if (n > avail) {                          /* 全螢幕仍放不下 */
+      draw_overflow_prompt(ctx, b);
+      return;
+    }
+  } else {
+    /* 一維：依長度逐步降級 直向 → 隱藏文字 → 全螢幕橫向 → 指示畫面 */
+    if (s_module_count > W) {                 /* 直向放不下 → 強制橫向 */
+      rotation = 1;
+    }
+    if (rotation == 1) {
+      if (show_text && s_module_count > H - TEXT_AREA_H) {
+        show_text = false;                    /* 橫向含文字放不下 → 隱藏文字 */
+      }
+      int axis = show_text ? (H - TEXT_AREA_H) : H;
+      if (s_module_count > axis) {            /* 全螢幕橫向仍放不下 */
+        draw_overflow_prompt(ctx, b);
+        return;
+      }
+    }
+    /* rotation == 0（直向）時 s_module_count <= W 已成立，必可顯示 */
+  }
+
   /* 隱藏文字時，條碼可用滿整個畫面 */
-  int reserved = s_text_visible ? TEXT_AREA_H : 0;
-  GRect content = GRect(0, 0, b.size.w, b.size.h - reserved);
+  int reserved = show_text ? TEXT_AREA_H : 0;
+  GRect content = GRect(0, 0, W, H - reserved);
 
   if (s_format == FORMAT_QR) {
     draw_qr(ctx, content);
   } else {
-    draw_linear(ctx, content);
+    draw_linear(ctx, content, rotation);
   }
 
-  /* 底部人眼可讀文字（可由設定或 SELECT 鍵開關）*/
-  if (s_text_visible) {
-    GRect text_r = GRect(2, b.size.h - TEXT_AREA_H, b.size.w - 4, TEXT_AREA_H);
+  /* 底部人眼可讀文字（可由設定或 SELECT 鍵開關，空間不足時自動隱藏）*/
+  if (show_text) {
+    GRect text_r = GRect(2, H - TEXT_AREA_H, W - 4, TEXT_AREA_H);
     graphics_context_set_text_color(ctx, GColorBlack);
     graphics_draw_text(ctx, s_data,
         fonts_get_system_font(FONT_KEY_GOTHIC_18),
@@ -481,6 +570,15 @@ static void inbox_dropped(AppMessageResult reason, void *context) {
  *  按鍵：上 / 下 切換方向（正面 <-> 順時鐘 90 度）
  * ------------------------------------------------------------------------- */
 static void toggle_rotation(void) {
+  /* 一維條碼太長、直向放不下時，主動禁止切回直向，維持橫向顯示 */
+  if (s_format != FORMAT_QR && !linear_fits_portrait()) {
+    if (s_rotation != 1) {
+      s_rotation = 1;
+      persist_write_int(PERSIST_ROTATION, s_rotation);
+      layer_mark_dirty(s_canvas_layer);
+    }
+    return;
+  }
   s_rotation = s_rotation ? 0 : 1;
   persist_write_int(PERSIST_ROTATION, s_rotation);
   layer_mark_dirty(s_canvas_layer);
@@ -513,6 +611,7 @@ static void click_config_provider(void *context) {
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
+  s_screen_bounds = bounds;   /* 供長度偵測器判斷條碼是否超出畫面邊界 */
 
   window_set_background_color(window, GColorWhite);
 
