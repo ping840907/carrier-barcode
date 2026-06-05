@@ -1,4 +1,4 @@
-# loader-barcode
+# carrier-barcode
 
 Pebble 條碼 App，支援一維與二維條碼。
 
